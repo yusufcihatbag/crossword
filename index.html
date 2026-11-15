@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>English Crossword</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #f4f4f4; color: #222; }
+  h1 { text-align: center; }
+  .layout { display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; }
+  #grid { display: grid; gap: 2px; background: #222; padding: 2px; width: max-content; height: max-content; }
+  .cell { width: 40px; height: 40px; position: relative; background: #fff; }
+  .cell.block { background: #222; }
+  .cell input {
+    width: 100%; height: 100%; border: none; background: transparent;
+    text-align: center; font-size: 20px; font-weight: bold; text-transform: uppercase;
+    padding: 8px 0 0 0; box-sizing: border-box; cursor: pointer; outline: none;
+  }
+  .cell .num { position: absolute; top: 1px; left: 3px; font-size: 10px; pointer-events: none; }
+  .cell.active { background: #cfe8ff; }
+  .cell.current { background: #ffe38a; }
+  .cell input.wrong { color: #d00; }
+  #current-clue { text-align: center; margin: 12px 0; min-height: 24px; font-weight: bold; }
+  .clues { max-width: 320px; }
+  .clues h2 { margin: 0 0 8px 0; font-size: 18px; }
+  .clues ul { list-style: none; padding: 0; margin: 0 0 20px 0; }
+  .clues li { padding: 4px 6px; cursor: pointer; border-radius: 4px; font-size: 14px; }
+  .clues li:hover { background: #ddd; }
+  .buttons { text-align: center; margin-top: 12px; }
+  button { padding: 8px 16px; font-size: 15px; margin: 0 4px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<h1>English Crossword</h1>
+<div id="current-clue">Click a cell to start</div>
+
+<div class="layout">
+  <div>
+    <div id="grid"></div>
+    <div class="buttons">
+      <button id="check">Check</button>
+      <button id="reveal">Reveal</button>
+      <button id="clear">Clear</button>
+    </div>
+  </div>
+  <div class="clues">
+    <h2>Across</h2><ul id="across-list"></ul>
+    <h2>Down</h2><ul id="down-list"></ul>
+  </div>
+</div>
+
+<script src="puzzle.js"></script>
+<script>
+const H = PUZZLE.height;
+const W = PUZZLE.width;
+
+// Çözümü bir tabloya yaz
+const solution = Array.from({ length: H }, () => Array(W).fill(null));
+const numbers = {};
+for (const e of PUZZLE.entries) {
+  const dr = e.direction === "down" ? 1 : 0;
+  const dc = e.direction === "across" ? 1 : 0;
+  for (let i = 0; i < e.length; i++) {
+    solution[e.row + dr * i][e.col + dc * i] = e.answer[i];
+  }
+  numbers[e.row + "," + e.col] = e.number;
+}
+
+let dir = "across";
+let cur = null;
+const inputs = {};
+const cellDivs = {};
+const gridEl = document.getElementById("grid");
+gridEl.style.gridTemplateColumns = `repeat(${W}, 40px)`;
+
+// Hücreleri oluştur
+for (let r = 0; r < H; r++) {
+  for (let c = 0; c < W; c++) {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    if (solution[r][c] === null) {
+      cell.classList.add("block");
+    } else {
+      const key = r + "," + c;
+      if (numbers[key]) {
+        const n = document.createElement("span");
+        n.className = "num";
+        n.textContent = numbers[key];
+        cell.appendChild(n);
+      }
+      const input = document.createElement("input");
+      input.maxLength = 2;
+      input.autocomplete = "off";
+      inputs[key] = input;
+      cellDivs[key] = cell;
+
+      input.addEventListener("click", () => select(r, c, true));
+      input.addEventListener("input", () => {
+        cur = { r, c };
+        input.value = input.value.toUpperCase().replace(/[^A-Z]/g, "").slice(-1);
+        input.classList.remove("wrong");
+        if (input.value) step(1);
+      });
+      input.addEventListener("keydown", (ev) => {
+        cur = { r, c };
+        if (ev.key === "Backspace" && input.value === "") {
+          ev.preventDefault();
+          step(-1);
+          const prev = inputs[cur.r + "," + cur.c];
+          if (prev) prev.value = "";
+        } else if (ev.key === "ArrowRight") { ev.preventDefault(); dir = "across"; move(0, 1); }
+        else if (ev.key === "ArrowLeft")  { ev.preventDefault(); dir = "across"; move(0, -1); }
+        else if (ev.key === "ArrowDown")  { ev.preventDefault(); dir = "down"; move(1, 0); }
+        else if (ev.key === "ArrowUp")    { ev.preventDefault(); dir = "down"; move(-1, 0); }
+      });
+    }
+    if (inputs[r + "," + c]) cell.appendChild(inputs[r + "," + c]);
+    gridEl.appendChild(cell);
+  }
+}
+
+// Bu hücreden geçen kelimeyi bul
+function entryAt(r, c, d) {
+  return PUZZLE.entries.find((e) => {
+    if (e.direction !== d) return false;
+    if (d === "across") return e.row === r && c >= e.col && c < e.col + e.length;
+    return e.col === c && r >= e.row && r < e.row + e.length;
+  });
+}
+
+function otherDir() { return dir === "across" ? "down" : "across"; }
+
+function select(r, c, toggle) {
+  if (toggle && cur && cur.r === r && cur.c === c) {
+    if (entryAt(r, c, otherDir())) dir = otherDir();
+  } else if (!entryAt(r, c, dir)) {
+    dir = otherDir();
+  }
+  cur = { r, c };
+  highlight();
+  inputs[r + "," + c].focus();
+}
+
+function highlight() {
+  for (const key in cellDivs) cellDivs[key].classList.remove("active", "current");
+  const e = entryAt(cur.r, cur.c, dir);
+  if (!e) return;
+  const dr = e.direction === "down" ? 1 : 0;
+  const dc = e.direction === "across" ? 1 : 0;
+  for (let i = 0; i < e.length; i++) {
+    cellDivs[(e.row + dr * i) + "," + (e.col + dc * i)].classList.add("active");
+  }
+  cellDivs[cur.r + "," + cur.c].classList.add("current");
+  document.getElementById("current-clue").textContent =
+    e.number + " " + (e.direction === "across" ? "Across" : "Down") +
+    ": " + e.clue + " (" + e.length + ")";
+}
+
+function move(dr, dc) {
+  const nr = cur.r + dr, nc = cur.c + dc;
+  if (inputs[nr + "," + nc]) select(nr, nc, false);
+}
+
+function step(delta) {
+  const dr = dir === "down" ? 1 : 0;
+  const dc = dir === "across" ? 1 : 0;
+  move(dr * delta, dc * delta);
+}
+
+// İpucu listeleri
+for (const e of PUZZLE.entries) {
+  const li = document.createElement("li");
+  li.textContent = e.number + ". " + e.clue + " (" + e.length + ")";
+  li.addEventListener("click", () => {
+    dir = e.direction;
+    select(e.row, e.col, false);
+  });
+  document.getElementById(e.direction + "-list").appendChild(li);
+}
+
+// Butonlar
+document.getElementById("check").addEventListener("click", () => {
+  for (const key in inputs) {
+    const [r, c] = key.split(",").map(Number);
+    const v = inputs[key].value;
+    inputs[key].classList.toggle("wrong", v !== "" && v !== solution[r][c]);
+  }
+});
+document.getElementById("reveal").addEventListener("click", () => {
+  for (const key in inputs) {
+    const [r, c] = key.split(",").map(Number);
+    inputs[key].value = solution[r][c];
+    inputs[key].classList.remove("wrong");
+  }
+});
+document.getElementById("clear").addEventListener("click", () => {
+  for (const key in inputs) {
+    inputs[key].value = "";
+    inputs[key].classList.remove("wrong");
+  }
+});
+</script>
+</body>
+</html>
