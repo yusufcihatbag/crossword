@@ -1,126 +1,302 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>English Crossword</title>
+<title>Kelime Bulmacası</title>
 <style>
+  :root { --cs: 40px; }
   body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #f4f4f4; color: #222; }
-  h1 { text-align: center; }
+  h1 { text-align: center; margin: 8px 0; }
+  input.field { padding: 8px; font-size: 15px; margin: 4px; width: 220px; }
+  button { padding: 8px 14px; font-size: 15px; margin: 4px; cursor: pointer; }
+  #auth { text-align: center; max-width: 520px; margin: 24px auto; }
+  #auth-msg { margin-top: 8px; color: #b00; min-height: 20px; }
+  #app { display: none; }
+  #topbar { text-align: center; font-size: 14px; margin-bottom: 8px; }
+  #stats { text-align: center; font-size: 14px; margin-bottom: 8px; color: #444; }
+  #current-clue { text-align: center; margin: 10px 0; min-height: 24px; font-weight: bold; }
   .layout { display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; }
   #grid { display: grid; gap: 2px; background: #222; padding: 2px; width: max-content; height: max-content; }
-  .cell { width: 40px; height: 40px; position: relative; background: #fff; }
+  .cell { width: var(--cs); height: var(--cs); position: relative; background: #fff; }
   .cell.block { background: #222; }
   .cell input {
     width: 100%; height: 100%; border: none; background: transparent;
-    text-align: center; font-size: 20px; font-weight: bold; text-transform: uppercase;
-    padding: 8px 0 0 0; box-sizing: border-box; cursor: pointer; outline: none;
+    text-align: center; font-size: calc(var(--cs) * 0.5); font-weight: bold; text-transform: uppercase;
+    padding: calc(var(--cs) * 0.2) 0 0 0; box-sizing: border-box; cursor: pointer; outline: none;
   }
   .cell .num { position: absolute; top: 1px; left: 3px; font-size: 10px; pointer-events: none; }
   .cell.active { background: #cfe8ff; }
   .cell.current { background: #ffe38a; }
   .cell input.wrong { color: #d00; }
-  #current-clue { text-align: center; margin: 12px 0; min-height: 24px; font-weight: bold; }
-  .clues { max-width: 320px; }
+  .cell input.right { color: #0a7a2f; }
+  .buttons { text-align: center; margin-top: 12px; }
+  .clues { max-width: 340px; }
   .clues h2 { margin: 0 0 8px 0; font-size: 18px; }
   .clues ul { list-style: none; padding: 0; margin: 0 0 20px 0; }
   .clues li { padding: 4px 6px; cursor: pointer; border-radius: 4px; font-size: 14px; }
   .clues li:hover { background: #ddd; }
-  .buttons { text-align: center; margin-top: 12px; }
-  button { padding: 8px 16px; font-size: 15px; margin: 0 4px; cursor: pointer; }
+  .clues li .ans { display: block; font-weight: bold; color: #0a5; }
+  #result { text-align: center; font-weight: bold; margin: 8px 0; min-height: 22px; }
 </style>
 </head>
 <body>
 
-<h1>English Crossword</h1>
-<div id="current-clue">Click a cell to start</div>
+<h1>Kelime Bulmacası</h1>
 
-<div class="layout">
-  <div>
-    <div id="grid"></div>
-    <div class="buttons">
-      <button id="check">Check</button>
-      <button id="reveal">Reveal</button>
-      <button id="clear">Clear</button>
+<div id="auth">
+  <p>Devam etmek için giriş yapın veya kayıt olun.</p>
+  <input class="field" id="email" type="email" placeholder="E-posta"><br>
+  <input class="field" id="password" type="password" placeholder="Şifre (en az 6 karakter)"><br>
+  <button id="login">Giriş yap</button>
+  <button id="signup">Kayıt ol</button>
+  <div id="auth-msg"></div>
+</div>
+
+<div id="app">
+  <div id="topbar"><span id="who"></span> <button id="logout">Çıkış</button></div>
+  <div id="stats"></div>
+  <div id="current-clue"></div>
+  <div id="result"></div>
+  <div class="layout">
+    <div>
+      <div id="grid"></div>
+      <div class="buttons">
+        <button id="check">Kontrol</button>
+        <button id="finish">Bitir</button>
+        <button id="reveal">Cevapları göster</button>
+        <button id="newpuzzle">Yeni bulmaca</button>
+      </div>
     </div>
-  </div>
-  <div class="clues">
-    <h2>Across</h2><ul id="across-list"></ul>
-    <h2>Down</h2><ul id="down-list"></ul>
+    <div class="clues">
+      <h2>Soldan sağa</h2><ul id="across-list"></ul>
+      <h2>Yukarıdan aşağı</h2><ul id="down-list"></ul>
+    </div>
   </div>
 </div>
 
-<script src="puzzle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
-const H = PUZZLE.height;
-const W = PUZZLE.width;
+// ====== BURAYA KENDİ BİLGİLERİNİZİ YAZIN ======
+const SUPABASE_URL = "https://faiygstsfawtxdtgahhz.supabase.co/rest/v1/";
+const SUPABASE_ANON_KEY = "sb_publishable_mcNFwtq0hSnLafcB6wjKRQ_30W4xNI7";
+// ===============================================
 
-// Çözümü bir tabloya yaz
-const solution = Array.from({ length: H }, () => Array(W).fill(null));
-const numbers = {};
-for (const e of PUZZLE.entries) {
-  const dr = e.direction === "down" ? 1 : 0;
-  const dc = e.direction === "across" ? 1 : 0;
-  for (let i = 0; i < e.length; i++) {
-    solution[e.row + dr * i][e.col + dc * i] = e.answer[i];
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ---------- Öğrenme ayarları ----------
+const INTERVALS = [0, 1, 3, 7, 21, 60]; // kutu numarasına göre tekrar aralığı (gün)
+const LEARNED_BOX = 3;                  // 3 doğru üst üste = öğrenildi
+const CANDIDATES = 18;                  // bulmaca için aday kelime sayısı
+const MAX_DUE = 8;                      // bir bulmacada en fazla kaç tekrar kelimesi
+
+let words = [];                 // tüm kelimeler
+let progress = new Map();       // word_id -> ilerleme kaydı
+let userId = null;
+
+// ---------- Yardımcılar ----------
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
   }
-  numbers[e.row + "," + e.col] = e.number;
+  return a;
+}
+async function fetchAll(table, cols, orderCol) {
+  let all = [], from = 0;
+  while (true) {
+    const { data, error } = await sb.from(table).select(cols).order(orderCol).range(from, from + 999);
+    if (error) throw error;
+    all.push(...data);
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return all;
 }
 
-let dir = "across";
-let cur = null;
-const inputs = {};
-const cellDivs = {};
-const gridEl = document.getElementById("grid");
-gridEl.style.gridTemplateColumns = `repeat(${W}, 40px)`;
+// ---------- Kelime seçimi ----------
+function pickWords() {
+  const now = Date.now();
+  const due = [], fresh = [], later = [];
+  for (const w of words) {
+    const p = progress.get(w.id);
+    if (!p) fresh.push(w);
+    else if (new Date(p.next_due).getTime() <= now) due.push(w);
+    else later.push(w);
+  }
+  due.sort((a, b) => new Date(progress.get(a.id).next_due) - new Date(progress.get(b.id).next_due));
+  const picked = due.slice(0, MAX_DUE);
+  shuffle(fresh);
+  picked.push(...fresh.slice(0, CANDIDATES - picked.length));
+  if (picked.length < CANDIDATES) picked.push(...due.slice(MAX_DUE, MAX_DUE + CANDIDATES - picked.length));
+  if (picked.length < CANDIDATES) {
+    shuffle(later);
+    picked.push(...later.slice(0, CANDIDATES - picked.length));
+  }
+  return picked;
+}
 
-// Hücreleri oluştur
-for (let r = 0; r < H; r++) {
-  for (let c = 0; c < W; c++) {
-    const cell = document.createElement("div");
-    cell.className = "cell";
-    if (solution[r][c] === null) {
-      cell.classList.add("block");
-    } else {
-      const key = r + "," + c;
-      if (numbers[key]) {
-        const n = document.createElement("span");
-        n.className = "num";
-        n.textContent = numbers[key];
-        cell.appendChild(n);
-      }
-      const input = document.createElement("input");
-      input.maxLength = 2;
-      input.autocomplete = "off";
-      inputs[key] = input;
-      cellDivs[key] = cell;
-
-      input.addEventListener("click", () => select(r, c, true));
-      input.addEventListener("input", () => {
-        cur = { r, c };
-        input.value = input.value.toUpperCase().replace(/[^A-Z]/g, "").slice(-1);
-        input.classList.remove("wrong");
-        if (input.value) step(1);
-      });
-      input.addEventListener("keydown", (ev) => {
-        cur = { r, c };
-        if (ev.key === "Backspace" && input.value === "") {
-          ev.preventDefault();
-          step(-1);
-          const prev = inputs[cur.r + "," + cur.c];
-          if (prev) prev.value = "";
-        } else if (ev.key === "ArrowRight") { ev.preventDefault(); dir = "across"; move(0, 1); }
-        else if (ev.key === "ArrowLeft")  { ev.preventDefault(); dir = "across"; move(0, -1); }
-        else if (ev.key === "ArrowDown")  { ev.preventDefault(); dir = "down"; move(1, 0); }
-        else if (ev.key === "ArrowUp")    { ev.preventDefault(); dir = "down"; move(-1, 0); }
-      });
+// ---------- Bulmaca üretici ----------
+function fits(g, a, r, c, dir, hasPlaced) {
+  const dr = dir === "down" ? 1 : 0, dc = dir === "across" ? 1 : 0;
+  const er = r + dr * (a.length - 1), ec = c + dc * (a.length - 1);
+  const S = g.size;
+  if (r < 0 || c < 0 || er >= S || ec >= S) return -1;
+  const at = (y, x) => (y >= 0 && x >= 0 && y < S && x < S) ? g.cells[y][x] : null;
+  if (at(r - dr, c - dc) !== null || at(er + dr, ec + dc) !== null) return -1;
+  const bit = dir === "across" ? 1 : 2;
+  let inter = 0;
+  for (let i = 0; i < a.length; i++) {
+    const y = r + dr * i, x = c + dc * i, ex = g.cells[y][x];
+    if (ex !== null) {
+      if (ex !== a[i]) return -1;
+      if (g.owner[y][x] & bit) return -1;
+      inter++;
+    } else if (at(y + dc, x + dr) !== null || at(y - dc, x - dr) !== null) {
+      return -1;
     }
-    if (inputs[r + "," + c]) cell.appendChild(inputs[r + "," + c]);
-    gridEl.appendChild(cell);
   }
+  if (hasPlaced && inter === 0) return -1;
+  if (inter === a.length) return -1;
+  return inter;
+}
+function put(g, w, r, c, dir) {
+  const dr = dir === "down" ? 1 : 0, dc = dir === "across" ? 1 : 0;
+  const bit = dir === "across" ? 1 : 2;
+  for (let i = 0; i < w.answer.length; i++) {
+    g.cells[r + dr * i][c + dc * i] = w.answer[i];
+    g.owner[r + dr * i][c + dc * i] |= bit;
+  }
+  g.placed.push({ w, row: r, col: c, dir });
+}
+function generatePuzzle(cands, size = 15) {
+  let best = null;
+  for (let t = 0; t < 40; t++) {
+    const g = {
+      size,
+      cells: Array.from({ length: size }, () => Array(size).fill(null)),
+      owner: Array.from({ length: size }, () => Array(size).fill(0)),
+      placed: [],
+    };
+    const order = cands
+      .map((w) => ({ w, k: w.answer.length + Math.random() * 4 }))
+      .sort((a, b) => b.k - a.k)
+      .map((x) => x.w);
+    for (const w of order) {
+      const a = w.answer;
+      if (g.placed.length === 0) {
+        put(g, w, Math.floor(size / 2), Math.floor((size - a.length) / 2), "across");
+        continue;
+      }
+      let bestInter = 0, opts = [];
+      for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) for (const d of ["across", "down"]) {
+        const n = fits(g, a, r, c, d, true);
+        if (n > 0) {
+          if (n > bestInter) { bestInter = n; opts = []; }
+          if (n === bestInter) opts.push([r, c, d]);
+        }
+      }
+      if (opts.length) {
+        const [r, c, d] = opts[Math.floor(Math.random() * opts.length)];
+        put(g, w, r, c, d);
+      }
+    }
+    if (!best || g.placed.length > best.length) best = g.placed;
+    if (best.length >= Math.min(cands.length, 14)) break;
+  }
+  return toPuzzle(best);
+}
+function toPuzzle(placed) {
+  const ext = (p) => ({
+    r2: p.row + (p.dir === "down" ? p.w.answer.length - 1 : 0),
+    c2: p.col + (p.dir === "across" ? p.w.answer.length - 1 : 0),
+  });
+  const minR = Math.min(...placed.map((p) => p.row));
+  const minC = Math.min(...placed.map((p) => p.col));
+  const maxR = Math.max(...placed.map((p) => ext(p).r2));
+  const maxC = Math.max(...placed.map((p) => ext(p).c2));
+  const entries = placed.map((p) => ({
+    id: p.w.id, answer: p.w.answer, turkish: p.w.turkish,
+    row: p.row - minR, col: p.col - minC, direction: p.dir, length: p.w.answer.length,
+  }));
+  const starts = [...new Set(entries.map((e) => e.row * 100 + e.col))].sort((a, b) => a - b);
+  entries.forEach((e) => (e.number = starts.indexOf(e.row * 100 + e.col) + 1));
+  entries.sort((a, b) => a.number - b.number);
+  return { height: maxR - minR + 1, width: maxC - minC + 1, entries };
 }
 
-// Bu hücreden geçen kelimeyi bul
+// ---------- Arayüz ----------
+let PUZZLE, solution, inputs, cellDivs, dir, cur, revealed, finished;
+const gridEl = document.getElementById("grid");
+
+function render(p) {
+  PUZZLE = p; revealed = false; finished = false; dir = "across"; cur = null;
+  inputs = {}; cellDivs = {};
+  const H = p.height, W = p.width;
+  const cs = Math.max(26, Math.min(40, Math.floor((window.innerWidth - 40) / W)));
+  document.documentElement.style.setProperty("--cs", cs + "px");
+  solution = Array.from({ length: H }, () => Array(W).fill(null));
+  const numbers = {};
+  for (const e of p.entries) {
+    const dr = e.direction === "down" ? 1 : 0, dc = e.direction === "across" ? 1 : 0;
+    for (let i = 0; i < e.length; i++) solution[e.row + dr * i][e.col + dc * i] = e.answer[i];
+    numbers[e.row + "," + e.col] = e.number;
+  }
+  gridEl.innerHTML = "";
+  gridEl.style.gridTemplateColumns = `repeat(${W}, var(--cs))`;
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      if (solution[r][c] === null) {
+        cell.classList.add("block");
+      } else {
+        const key = r + "," + c;
+        if (numbers[key]) {
+          const n = document.createElement("span");
+          n.className = "num"; n.textContent = numbers[key];
+          cell.appendChild(n);
+        }
+        const input = document.createElement("input");
+        input.maxLength = 2; input.autocomplete = "off";
+        input.setAttribute("autocapitalize", "characters");
+        inputs[key] = input; cellDivs[key] = cell;
+        input.addEventListener("click", () => select(r, c, true));
+        input.addEventListener("input", () => {
+          cur = { r, c };
+          input.value = input.value.toUpperCase().replace(/[^A-Z]/g, "").slice(-1);
+          input.classList.remove("wrong", "right");
+          if (input.value) step(1);
+        });
+        input.addEventListener("keydown", (ev) => {
+          cur = { r, c };
+          if (ev.key === "Backspace" && input.value === "") {
+            ev.preventDefault(); step(-1);
+            const prev = inputs[cur.r + "," + cur.c];
+            if (prev) prev.value = "";
+          } else if (ev.key === "ArrowRight") { ev.preventDefault(); dir = "across"; move(0, 1); }
+          else if (ev.key === "ArrowLeft") { ev.preventDefault(); dir = "across"; move(0, -1); }
+          else if (ev.key === "ArrowDown") { ev.preventDefault(); dir = "down"; move(1, 0); }
+          else if (ev.key === "ArrowUp") { ev.preventDefault(); dir = "down"; move(-1, 0); }
+        });
+        cell.appendChild(input);
+      }
+      gridEl.appendChild(cell);
+    }
+  }
+  document.getElementById("across-list").innerHTML = "";
+  document.getElementById("down-list").innerHTML = "";
+  for (const e of p.entries) {
+    const li = document.createElement("li");
+    li.textContent = e.number + ". " + e.turkish + " (" + e.length + " harf)";
+    li.addEventListener("click", () => { dir = e.direction; select(e.row, e.col, false); });
+    document.getElementById(e.direction + "-list").appendChild(li);
+    e.li = li;
+  }
+  document.getElementById("current-clue").textContent = "Bir hücreye tıklayarak başlayın";
+  document.getElementById("result").textContent = "";
+}
+
 function entryAt(r, c, d) {
   return PUZZLE.entries.find((e) => {
     if (e.direction !== d) return false;
@@ -128,9 +304,7 @@ function entryAt(r, c, d) {
     return e.col === c && r >= e.row && r < e.row + e.length;
   });
 }
-
 function otherDir() { return dir === "across" ? "down" : "across"; }
-
 function select(r, c, toggle) {
   if (toggle && cur && cur.r === r && cur.c === c) {
     if (entryAt(r, c, otherDir())) dir = otherDir();
@@ -141,45 +315,83 @@ function select(r, c, toggle) {
   highlight();
   inputs[r + "," + c].focus();
 }
-
 function highlight() {
-  for (const key in cellDivs) cellDivs[key].classList.remove("active", "current");
+  for (const k in cellDivs) cellDivs[k].classList.remove("active", "current");
   const e = entryAt(cur.r, cur.c, dir);
   if (!e) return;
-  const dr = e.direction === "down" ? 1 : 0;
-  const dc = e.direction === "across" ? 1 : 0;
-  for (let i = 0; i < e.length; i++) {
-    cellDivs[(e.row + dr * i) + "," + (e.col + dc * i)].classList.add("active");
-  }
+  const dr = e.direction === "down" ? 1 : 0, dc = e.direction === "across" ? 1 : 0;
+  for (let i = 0; i < e.length; i++) cellDivs[(e.row + dr * i) + "," + (e.col + dc * i)].classList.add("active");
   cellDivs[cur.r + "," + cur.c].classList.add("current");
   document.getElementById("current-clue").textContent =
-    e.number + " " + (e.direction === "across" ? "Across" : "Down") +
-    ": " + e.clue + " (" + e.length + ")";
+    e.number + (e.direction === "across" ? " Soldan sağa" : " Yukarıdan aşağı") + ": " + e.turkish + " (" + e.length + " harf)";
 }
-
 function move(dr, dc) {
   const nr = cur.r + dr, nc = cur.c + dc;
   if (inputs[nr + "," + nc]) select(nr, nc, false);
 }
-
 function step(delta) {
-  const dr = dir === "down" ? 1 : 0;
-  const dc = dir === "across" ? 1 : 0;
-  move(dr * delta, dc * delta);
+  move((dir === "down" ? 1 : 0) * delta, (dir === "across" ? 1 : 0) * delta);
 }
 
-// İpucu listeleri
-for (const e of PUZZLE.entries) {
-  const li = document.createElement("li");
-  li.textContent = e.number + ". " + e.clue + " (" + e.length + ")";
-  li.addEventListener("click", () => {
-    dir = e.direction;
-    select(e.row, e.col, false);
-  });
-  document.getElementById(e.direction + "-list").appendChild(li);
+// ---------- Öğrenme kaydı ----------
+function updateStats() {
+  let learned = 0, learning = 0;
+  for (const w of words) {
+    const p = progress.get(w.id);
+    if (!p) continue;
+    if (p.box >= LEARNED_BOX) learned++; else learning++;
+  }
+  const fresh = words.length - learned - learning;
+  document.getElementById("stats").textContent =
+    "Toplam: " + words.length + "  |  Öğrenilen: " + learned + "  |  Çalışılıyor: " + learning + "  |  Yeni: " + fresh;
 }
 
-// Butonlar
+async function finishPuzzle() {
+  if (finished) return;
+  finished = true;
+  const rows = [];
+  let ok = 0, bad = 0;
+  const now = new Date();
+  for (const e of PUZZLE.entries) {
+    const dr = e.direction === "down" ? 1 : 0, dc = e.direction === "across" ? 1 : 0;
+    let typed = "";
+    for (let i = 0; i < e.length; i++) typed += inputs[(e.row + dr * i) + "," + (e.col + dc * i)].value || "";
+    let result;
+    if (revealed) result = false;
+    else if (typed.length === 0) result = null;
+    else result = typed === e.answer;
+
+    // Cevabı listede göster
+    const span = document.createElement("span");
+    span.className = "ans";
+    span.textContent = "→ " + e.answer.toLowerCase();
+    e.li.appendChild(span);
+
+    if (result === null) continue;
+    const p = progress.get(e.id);
+    let box = p ? p.box : 0;
+    box = result ? Math.min(box + 1, INTERVALS.length - 1) : Math.max(box - 2, 0);
+    const due = new Date(now.getTime() + (result ? INTERVALS[box] : 0) * 86400000);
+    const row = {
+      user_id: userId, word_id: e.id, box,
+      correct_total: (p ? p.correct_total : 0) + (result ? 1 : 0),
+      wrong_total: (p ? p.wrong_total : 0) + (result ? 0 : 1),
+      last_seen: now.toISOString(), next_due: due.toISOString(),
+    };
+    rows.push(row);
+    progress.set(e.id, row);
+    result ? ok++ : bad++;
+  }
+  document.getElementById("result").textContent =
+    "Doğru: " + ok + "   Yanlış/gösterilen: " + bad + (rows.length === 0 ? " (hiç cevap girilmedi, kayıt yapılmadı)" : "");
+  updateStats();
+  if (rows.length) {
+    const { error } = await sb.from("progress").upsert(rows, { onConflict: "user_id,word_id" });
+    if (error) document.getElementById("result").textContent += "  | Kayıt hatası: " + error.message;
+  }
+}
+
+// ---------- Butonlar ----------
 document.getElementById("check").addEventListener("click", () => {
   for (const key in inputs) {
     const [r, c] = key.split(",").map(Number);
@@ -187,17 +399,79 @@ document.getElementById("check").addEventListener("click", () => {
     inputs[key].classList.toggle("wrong", v !== "" && v !== solution[r][c]);
   }
 });
+document.getElementById("finish").addEventListener("click", () => {
+  for (const key in inputs) {
+    const [r, c] = key.split(",").map(Number);
+    const v = inputs[key].value;
+    if (v !== "") inputs[key].classList.add(v === solution[r][c] ? "right" : "wrong");
+  }
+  finishPuzzle();
+});
 document.getElementById("reveal").addEventListener("click", () => {
+  revealed = true;
   for (const key in inputs) {
     const [r, c] = key.split(",").map(Number);
     inputs[key].value = solution[r][c];
-    inputs[key].classList.remove("wrong");
+    inputs[key].classList.remove("wrong", "right");
   }
+  finishPuzzle();
 });
-document.getElementById("clear").addEventListener("click", () => {
-  for (const key in inputs) {
-    inputs[key].value = "";
-    inputs[key].classList.remove("wrong");
+document.getElementById("newpuzzle").addEventListener("click", newPuzzle);
+
+function newPuzzle() {
+  if (words.length < 8) {
+    document.getElementById("current-clue").textContent = "Bulmaca için en az 8 uygun kelime gerekli.";
+    return;
+  }
+  render(generatePuzzle(pickWords(), 15));
+}
+
+// ---------- Giriş / kayıt ----------
+const msg = (t) => (document.getElementById("auth-msg").textContent = t);
+document.getElementById("login").addEventListener("click", async () => {
+  const { error } = await sb.auth.signInWithPassword({
+    email: document.getElementById("email").value.trim(),
+    password: document.getElementById("password").value,
+  });
+  if (error) msg(error.message);
+});
+document.getElementById("signup").addEventListener("click", async () => {
+  const { error } = await sb.auth.signUp({
+    email: document.getElementById("email").value.trim(),
+    password: document.getElementById("password").value,
+  });
+  msg(error ? error.message : "Kayıt başarılı. Giriş yapılıyor...");
+});
+document.getElementById("logout").addEventListener("click", () => sb.auth.signOut());
+
+async function startApp(user) {
+  userId = user.id;
+  document.getElementById("auth").style.display = "none";
+  document.getElementById("app").style.display = "block";
+  document.getElementById("who").textContent = user.email;
+  try {
+    const all = await fetchAll("words", "id,english,turkish", "id");
+    words = all
+      .filter((w) => /^[A-Za-z]{3,12}$/.test(w.english.trim()))
+      .map((w) => ({ id: w.id, answer: w.english.trim().toUpperCase(), turkish: w.turkish }));
+    const prog = await fetchAll("progress", "*", "word_id");
+    progress = new Map(prog.map((p) => [p.word_id, p]));
+    updateStats();
+    newPuzzle();
+  } catch (e) {
+    document.getElementById("current-clue").textContent = "Veri yüklenemedi: " + e.message;
+  }
+}
+function showLogin() {
+  userId = null;
+  document.getElementById("auth").style.display = "block";
+  document.getElementById("app").style.display = "none";
+}
+sb.auth.onAuthStateChange((event, session) => {
+  if (session && session.user) {
+    if (userId !== session.user.id) startApp(session.user);
+  } else {
+    showLogin();
   }
 });
 </script>
